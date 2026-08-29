@@ -52,7 +52,7 @@ class MicrophoneTests(unittest.TestCase):
     def test_records_speech_and_keeps_debug_copy(self):
         calibration = np.full((24000, 1), 0.002, dtype=np.float32)
         speech = [np.full((1600, 1), 0.04, dtype=np.float32) for _ in range(3)]
-        silence = [np.zeros((1600, 1), dtype=np.float32) for _ in range(10)]
+        silence = [np.zeros((1600, 1), dtype=np.float32) for _ in range(16)]
         streams = iter([_FakeStream([calibration]), _FakeStream(speech + silence)])
 
         with patch.object(microphone_module, "VoiceActivityDetector", _FakeVAD), patch.object(
@@ -70,7 +70,7 @@ class MicrophoneTests(unittest.TestCase):
     def test_vad_receives_a_rolling_audio_window(self):
         calibration = np.full((24000, 1), 0.002, dtype=np.float32)
         blocks = [np.full((1600, 1), 0.04, dtype=np.float32) for _ in range(2)]
-        blocks += [np.zeros((1600, 1), dtype=np.float32) for _ in range(10)]
+        blocks += [np.zeros((1600, 1), dtype=np.float32) for _ in range(16)]
         streams = iter([_FakeStream([calibration]), _FakeStream(blocks)])
         vad = _WindowAwareVAD()
 
@@ -88,7 +88,7 @@ class MicrophoneTests(unittest.TestCase):
     def test_uses_rms_when_vad_misses_short_speech_blocks(self):
         calibration = np.full((24000, 1), 0.002, dtype=np.float32)
         speech = [np.full((1600, 1), 0.04, dtype=np.float32) for _ in range(2)]
-        silence = [np.zeros((1600, 1), dtype=np.float32) for _ in range(10)]
+        silence = [np.zeros((1600, 1), dtype=np.float32) for _ in range(16)]
         streams = iter([_FakeStream([calibration]), _FakeStream(speech + silence)])
 
         with patch.object(microphone_module, "VoiceActivityDetector", _SilentVAD), patch.object(

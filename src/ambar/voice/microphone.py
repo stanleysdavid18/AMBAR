@@ -6,6 +6,7 @@ import numpy as np
 import sounddevice as sd
 from scipy.io.wavfile import write
 
+from ambar.config.manager import ConfigManager
 from ambar.core.paths import writable_runtime
 from ambar.voice.vad import VoiceActivityDetector
 
@@ -16,8 +17,9 @@ class Microphone:
     def __init__(self):
         self.sample_rate = 16000
         self.block_duration = 0.1
-        self.max_seconds = 10
-        self.silence_seconds = 1.0
+        voice_settings = self._voice_settings()
+        self.max_seconds = self._positive_float(voice_settings.get("record_max_seconds"), 45.0)
+        self.silence_seconds = self._positive_float(voice_settings.get("silence_seconds"), 1.6)
         self.activation_blocks = 2
         self.min_threshold = 0.008
         self.noise_multiplier = 2.0
@@ -31,6 +33,23 @@ class Microphone:
         self._vad_window_blocks = 5
         self._debug_audio = writable_runtime() / "audio" / "debug.wav"
         self._debug_audio.parent.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _voice_settings():
+        """Carga ajustes de voz sin impedir el inicio si el archivo falla."""
+        try:
+            return ConfigManager().get("voice")
+        except (FileNotFoundError, KeyError, OSError, ValueError) as error:
+            print(f"[Micrófono] Usando ajustes de escucha predeterminados: {error}")
+            return {}
+
+    @staticmethod
+    def _positive_float(value, default):
+        try:
+            parsed = float(value)
+            return parsed if parsed > 0 else default
+        except (TypeError, ValueError):
+            return default
 
     def calibrate(self, seconds=1.5):
         print("[Micrófono] Calibrando ruido ambiente...")
