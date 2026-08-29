@@ -18,12 +18,13 @@ class Microphone:
         self.sample_rate = 16000
         self.block_duration = 0.1
         voice_settings = self._voice_settings()
+        self.input_device = voice_settings.get("input_device")
         self.max_seconds = self._positive_float(voice_settings.get("record_max_seconds"), 45.0)
         self.silence_seconds = self._positive_float(voice_settings.get("silence_seconds"), 1.6)
-        self.activation_blocks = 2
-        self.min_threshold = 0.008
-        self.noise_multiplier = 2.0
-        self.max_threshold = 0.03
+        self.activation_blocks = max(1, int(voice_settings.get("activation_blocks", 1)))
+        self.min_threshold = self._positive_float(voice_settings.get("min_threshold"), 0.008)
+        self.noise_multiplier = self._positive_float(voice_settings.get("noise_multiplier"), 2.0)
+        self.max_threshold = self._positive_float(voice_settings.get("max_threshold"), 0.03)
         self.threshold = self.min_threshold
         self._calibrated = False
         self._debug = True
@@ -51,6 +52,15 @@ class Microphone:
         except (TypeError, ValueError):
             return default
 
+    def apply_voice_settings(self, settings):
+        """Actualiza parámetros de captura sin reiniciar el asistente."""
+        self.input_device = settings.get("input_device", self.input_device)
+        self.max_seconds = self._positive_float(settings.get("record_max_seconds"), self.max_seconds)
+        self.silence_seconds = self._positive_float(settings.get("silence_seconds"), self.silence_seconds)
+        self.min_threshold = self._positive_float(settings.get("min_threshold"), self.min_threshold)
+        self.noise_multiplier = self._positive_float(settings.get("noise_multiplier"), self.noise_multiplier)
+        self.max_threshold = self._positive_float(settings.get("max_threshold"), self.max_threshold)
+        self.threshold = min(max(self.threshold, self.min_threshold), self.max_threshold)
     def calibrate(self, seconds=1.5):
         print("[Micrófono] Calibrando ruido ambiente...")
         frames = int(self.sample_rate * seconds)
@@ -164,6 +174,7 @@ class Microphone:
 
     def _open_stream(self):
         return sd.InputStream(
+            device=self.input_device,
             samplerate=self.sample_rate,
             channels=1,
             dtype="float32",

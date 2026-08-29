@@ -1,20 +1,31 @@
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QEvent, QSettings, QTimer, Qt, Signal
+import sounddevice as sd
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QFormLayout,
     QHBoxLayout,
+    QInputDialog,
+    QLineEdit,
     QLabel,
     QPushButton,
     QSizeGrip,
+    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
 
+from ambar.config.manager import ConfigManager
+from ambar.config.secrets import ApiKeyStore
 from ambar.core.state import SystemState
 from ambar.gui.avatar import AvatarWidget
 
 
 class AmberWindow(QWidget):
+    minimized_to_tray = Signal()
     _DISPLAY = {
         SystemState.OFFLINE: "Desconectada", SystemState.STARTING: "Iniciando...",
         SystemState.READY: "Lista", SystemState.SLEEPING: "Dormida",
@@ -26,14 +37,16 @@ class AmberWindow(QWidget):
         super().__init__()
         self._events = events
         self._settings = QSettings("AMBAR", "AMBAR")
+        self._key_store = ApiKeyStore()
         self._drag_offset = None
+        self._allow_exit = False
         self._show_microphone_button = self._settings.value("ui/show_microphone_button", True, type=bool)
         self._microphone_enabled = self._transcription_active = self._developer_mode = False
 
         self.setWindowTitle("Ámbar")
         self.setMinimumSize(280, 320)
         self.resize(340, 390)
-        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
+        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint)
         self.setStyleSheet("QWidget { background: #140f1f; color: #f7efff; font-family: Segoe UI; } QPushButton { background: #342547; border: 1px solid #795ca0; border-radius: 12px; padding: 7px 10px; } QPushButton:hover { background: #4b3565; } QLabel { color: #eadcf7; }")
         self.restoreGeometry(self._settings.value("window/geometry", b""))
 
@@ -47,23 +60,32 @@ class AmberWindow(QWidget):
             label.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.transcript.setWordWrap(True)
 
+        self.parameters_button = QPushButton("(/)")
         self.settings_button = QPushButton("⚙️")
         self.quick_microphone_button = QPushButton("🎤")
+        self.parameters_button.setToolTip("Parámetros de voz")
         self.settings_button.setToolTip("Configuración y modo desarrollador")
         self.quick_microphone_button.setToolTip("Activar o desactivar escucha")
+        self.minimize_button = QPushButton("—")
+        self.minimize_button.setToolTip("Minimizar a la bandeja")
         self.close_button = QPushButton("×")
         self.close_button.setToolTip("Cerrar Ámbar")
+        self.parameters_button.clicked.connect(self.show_voice_parameters)
         self.settings_button.clicked.connect(self.show_settings)
         self.quick_microphone_button.clicked.connect(self.toggle_microphone)
+        self.minimize_button.clicked.connect(self.minimize_to_tray)
         self.close_button.clicked.connect(self.close)
 
         self.resize_grip = QSizeGrip(self)
         self._build_settings_panel()
+        self._build_voice_parameters_dialog()
 
         header = QHBoxLayout()
         header.addStretch()
         header.addWidget(self.quick_microphone_button)
+        header.addWidget(self.parameters_button)
         header.addWidget(self.settings_button)
+        header.addWidget(self.minimize_button)
         header.addWidget(self.close_button)
 
         layout = QVBoxLayout()
@@ -78,6 +100,95 @@ class AmberWindow(QWidget):
         self.quick_microphone_button.setVisible(self._show_microphone_button)
         self._set_developer_controls_visible(False)
 
+    _VOICE_PRESETS = {
+        "Bajo": {"min_threshold": 0.015, "noise_multiplier": 2.5, "max_threshold": 0.05, "barge_in_threshold": 0.015},
+        "Medio": {"min_threshold": 0.008, "noise_multiplier": 2.0, "max_threshold": 0.03, "barge_in_threshold": 0.006},
+        "Alto": {"min_threshold": 0.004, "noise_multiplier": 1.5, "max_threshold": 0.02, "barge_in_threshold": 0.003},
+    }
+
+    def _build_voice_parameters_dialog(self):
+        voice = ConfigManager().get("voice")
+        self.voice_parameters_dialog = QDialog(self)
+        self.voice_parameters_dialog.setWindowTitle("Parámetros de voz")
+        layout = QVBoxLayout(self.voice_parameters_dialog)
+        self.parameters_switch = QPushButton("Switch: modo simple")
+        self.parameters_switch.clicked.connect(self.toggle_parameters_mode)
+        layout.addWidget(self.parameters_switch)
+
+        self.simple_parameters = QWidget()
+        simple_layout = QFormLayout(self.simple_parameters)
+        self.voice_preset = QComboBox()
+        self.voice_preset.addItems(("Bajo", "Medio", "Alto"))
+        self.voice_preset.setCurrentText("Medio")
+        self.preset_explanation = QLabel()
+        self.preset_explanation.setWordWrap(True)
+        self.voice_preset.currentTextChanged.connect(self._update_preset_explanation)
+        simple_layout.addRow("Umbral", self.voice_preset)
+        simple_layout.addRow(self.preset_explanation)
+        layout.addWidget(self.simple_parameters)
+
+        self.manual_parameters = QWidget()
+        form = QFormLayout(self.manual_parameters)
+        self._voice_fields = {}
+        definitions = (
+            ("record_max_seconds", "Máximo de grabación (s)", 1.0, 120.0, 1),
+            ("silence_seconds", "Silencio para finalizar (s)", 0.2, 10.0, 1),
+            ("min_threshold", "Umbral mínimo", 0.001, 0.1, 3),
+            ("noise_multiplier", "Multiplicador de ruido", 1.0, 5.0, 2),
+            ("max_threshold", "Umbral máximo", 0.005, 0.2, 3),
+            ("barge_in_max_seconds", "Escucha durante habla (s)", 1.0, 15.0, 1),
+            ("barge_in_threshold", "Umbral durante habla", 0.001, 0.1, 3),
+        )
+        for key, label, minimum, maximum, decimals in definitions:
+            field = QDoubleSpinBox()
+            field.setRange(minimum, maximum)
+            field.setDecimals(decimals)
+            field.setSingleStep(0.1 if decimals == 1 else 0.001)
+            field.setValue(float(voice.get(key, minimum)))
+            self._voice_fields[key] = field
+            form.addRow(label, field)
+        self.barge_in_checkbox = QCheckBox("Permitir interrupción mientras Ámbar habla")
+        self.barge_in_checkbox.setChecked(bool(voice.get("barge_in_enabled", True)))
+        form.addRow(self.barge_in_checkbox)
+        layout.addWidget(self.manual_parameters)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.save_voice_parameters)
+        buttons.rejected.connect(self.voice_parameters_dialog.reject)
+        layout.addWidget(buttons)
+        self._simple_parameters_mode = True
+        self.manual_parameters.setVisible(False)
+        self._update_preset_explanation(self.voice_preset.currentText())
+
+    def toggle_parameters_mode(self):
+        self._simple_parameters_mode = not self._simple_parameters_mode
+        self.simple_parameters.setVisible(self._simple_parameters_mode)
+        self.manual_parameters.setVisible(not self._simple_parameters_mode)
+        self.parameters_switch.setText(
+            "Switch: modo manual" if self._simple_parameters_mode else "Switch: modo simple"
+        )
+
+    def _update_preset_explanation(self, preset):
+        explanations = {
+            "Bajo": "Bajo: requiere una voz más fuerte. Reduce activaciones por ruido o eco.",
+            "Medio": "Medio: equilibrio recomendado para la mayoría de micrófonos.",
+            "Alto": "Alto: escucha voces más suaves, pero puede captar más ruido ambiental.",
+        }
+        self.preset_explanation.setText(explanations[preset])
+
+    def show_voice_parameters(self):
+        self.voice_parameters_dialog.show()
+        self.voice_parameters_dialog.raise_()
+        self.voice_parameters_dialog.activateWindow()
+
+    def save_voice_parameters(self):
+        values = {key: field.value() for key, field in self._voice_fields.items()}
+        if self._simple_parameters_mode:
+            values.update(self._VOICE_PRESETS[self.voice_preset.currentText()])
+        values["barge_in_enabled"] = self.barge_in_checkbox.isChecked()
+        ConfigManager().update_section("voice", values)
+        self._events.emit("voice.settings.changed", values)
+        self.voice_parameters_dialog.accept()
     def _build_settings_panel(self):
         self.settings_panel = QDialog(self)
         self.settings_panel.setWindowTitle("Configuración de Ámbar")
@@ -91,6 +202,35 @@ class AmberWindow(QWidget):
         self.transcribe_button = QPushButton("Transcribir")
         self.finish_button = QPushButton("Finalizar")
         self.transcribe_button.setEnabled(False)
+        self.api_key_fields = {}
+        self.api_keys_form = QFormLayout()
+        for key_name in ApiKeyStore.KEY_NAMES:
+            field = QLineEdit()
+            field.setEchoMode(QLineEdit.EchoMode.Password)
+            field.setPlaceholderText(ApiKeyStore.mask(self._key_store.get(key_name)))
+            self.api_key_fields[key_name] = field
+            self.api_keys_form.addRow(key_name, field)
+        self.save_api_keys_button = QPushButton("Guardar API Keys")
+        self.api_keys_status = QLabel("")
+        self.save_api_keys_button.clicked.connect(self.save_api_keys)
+
+        self._input_devices = [
+            (index, device["name"])
+            for index, device in enumerate(sd.query_devices())
+            if device.get("max_input_channels", 0) > 0
+        ]
+        if len(self._input_devices) > 1:
+            self.microphone_selector = QComboBox()
+            for index, name in self._input_devices:
+                self.microphone_selector.addItem(name, index)
+            selected = ConfigManager().get("voice").get("input_device")
+            if selected is not None:
+                choice = self.microphone_selector.findData(selected)
+                if choice >= 0:
+                    self.microphone_selector.setCurrentIndex(choice)
+            self.microphone_selector.currentIndexChanged.connect(self.set_input_device)
+        else:
+            self.microphone_selector = None
 
         self.show_microphone_checkbox.toggled.connect(self.set_show_microphone_button)
         self.developer_mode_button.clicked.connect(self.toggle_developer_mode)
@@ -101,18 +241,52 @@ class AmberWindow(QWidget):
         layout = QVBoxLayout()
         layout.addWidget(QLabel("Controles"))
         layout.addWidget(self.show_microphone_checkbox)
+        if self.microphone_selector is not None:
+            layout.addWidget(QLabel("Micrófono"))
+            layout.addWidget(self.microphone_selector)
         layout.addWidget(QLabel("Modo desarrollador"))
         layout.addWidget(self.developer_mode_button)
         layout.addWidget(self.microphone_button)
         layout.addWidget(self.transcribe_button)
         layout.addWidget(self.finish_button)
+        layout.addWidget(QLabel("API Keys"))
+        layout.addLayout(self.api_keys_form)
+        layout.addWidget(self.save_api_keys_button)
+        layout.addWidget(self.api_keys_status)
         self.settings_panel.setLayout(layout)
 
+    def show_teach_app_dialog(self, data):
+        app = (data or {}).get("app", "aplicación")
+        command, accepted = QInputDialog.getText(
+            self,
+            "Enseñar aplicación",
+            f"Ruta o comando para {app}:",
+        )
+        self._events.emit(
+            "gui.teach_app.result",
+            {"app": app, "command": command, "cancelled": not accepted},
+        )
     def show_settings(self):
         self.settings_panel.show()
         self.settings_panel.raise_()
         self.settings_panel.activateWindow()
 
+    def save_api_keys(self):
+        values = {name: field.text() for name, field in self.api_key_fields.items() if field.text().strip()}
+        if not values:
+            self.api_keys_status.setText("Escribe al menos una clave para guardar.")
+            return
+        self._key_store.save(values)
+        for name, field in self.api_key_fields.items():
+            field.clear()
+            field.setPlaceholderText(ApiKeyStore.mask(self._key_store.get(name)))
+        self.api_keys_status.setText("Claves guardadas localmente.")
+    def set_input_device(self, _index):
+        if self.microphone_selector is None:
+            return
+        device = self.microphone_selector.currentData()
+        ConfigManager().update_section("voice", {"input_device": device})
+        self._events.emit("voice.settings.changed", {"input_device": device})
     def set_show_microphone_button(self, visible):
         self._show_microphone_button = bool(visible)
         self._settings.setValue("ui/show_microphone_button", self._show_microphone_button)
@@ -196,6 +370,19 @@ class AmberWindow(QWidget):
     def set_transcript(self, text):
         self.transcript.setText(f"Escuché: {text}")
 
+    def minimize_to_tray(self):
+        """Oculta la ventana sin detener el motor de conversación."""
+        self._settings.setValue("window/geometry", self.saveGeometry())
+        self.hide()
+        self.minimized_to_tray.emit()
+
+    def allow_exit(self):
+        self._allow_exit = True
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange and self.isMinimized():
+            QTimer.singleShot(0, self.minimize_to_tray)
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
@@ -208,11 +395,16 @@ class AmberWindow(QWidget):
 
     def mouseReleaseEvent(self, event):
         self._drag_offset = None
+        self._allow_exit = False
         event.accept()
 
     def closeEvent(self, event):
-        self._settings.setValue("window/geometry", self.saveGeometry())
-        if self._transcription_active:
-            self._events.emit("gui.test.stop")
-        self.settings_panel.close()
-        event.accept()
+        if self._allow_exit:
+            self._settings.setValue("window/geometry", self.saveGeometry())
+            if self._transcription_active:
+                self._events.emit("gui.test.stop")
+            self.settings_panel.close()
+            event.accept()
+            return
+        event.ignore()
+        self.minimize_to_tray()

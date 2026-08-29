@@ -14,12 +14,12 @@ class Brain:
     Cerebro principal de Ámbar.
     """
 
-    def __init__(self):
+    def __init__(self, events=None):
 
         self.context = ContextManager()
         self.planner = Planner()
-        self.skills = SkillManager()
         self.ai = AIManager()
+        self.skills = SkillManager(events, self.ai)
         self.rules = RuleEngine()
 
         self.mode_manager = ModeManager()
@@ -148,3 +148,4 @@ class Brain:
                 + "\nLa respuesta debe tener una frase cálida y breve (máximo 18 palabras)."
             ),
         )
+

@@ -1,11 +1,11 @@
-"""Proveedor Groq adaptado de proyecto-ambar."""
+"""Proveedor Cerebras mediante la API compatible con OpenAI."""
+
+from openai import OpenAI
 
 from ambar.config.secrets import ApiKeyStore
 
 
-class GroqProvider:
-    """Cliente reutilizable de Groq con la misma interfaz que los demás proveedores."""
-
+class CerebrasProvider:
     def __init__(self, model, key_store=None):
         self.model = model
         self._keys = key_store or ApiKeyStore()
@@ -14,15 +14,18 @@ class GroqProvider:
         self._error = None
 
     def is_available(self):
-        key = self._keys.get("GROQ_API_KEY")
+        key = self._keys.get("CEREBRAS_API_KEY")
         if not key:
             return False
         if self._error is not None and key == self._key_in_use:
             return False
         if self._client is None or key != self._key_in_use:
             try:
-                from groq import Groq
-                self._client = Groq(api_key=key, timeout=15.0)
+                self._client = OpenAI(
+                    api_key=key,
+                    base_url="https://api.cerebras.ai/v1",
+                    timeout=15.0,
+                )
                 self._key_in_use, self._error = key, None
             except Exception as error:
                 self._error = error
@@ -31,11 +34,11 @@ class GroqProvider:
 
     def generate(self, history, facts, system_prompt=""):
         if not self.is_available():
-            raise RuntimeError("Groq no está configurado o no está disponible")
+            raise RuntimeError("Cerebras no está configurado o no está disponible")
         instructions = system_prompt
         if facts:
             facts_text = "\n".join(f"{key}: {value}" for key, value in facts.items())
-            instructions = f"{instructions}\n\nInformación conocida del usuario:\n{facts_text}"
+            instructions = f"{instructions}\n\nInformación conocida del usuario:\n{facts_text}".strip()
         messages = []
         if instructions:
             messages.append({"role": "system", "content": instructions})
@@ -45,12 +48,12 @@ class GroqProvider:
                 model=self.model,
                 messages=messages,
                 temperature=0.7,
-                max_tokens=700,
+                max_completion_tokens=700,
             )
         except Exception as error:
             self._error = error
             raise
         text = response.choices[0].message.content
         if not text:
-            raise RuntimeError("Groq no devolvió texto")
+            raise RuntimeError("Cerebras no devolvió texto")
         return text.strip()

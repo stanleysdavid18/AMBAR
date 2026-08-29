@@ -19,9 +19,14 @@ class _Provider:
 
 
 class ProviderSelectorTests(unittest.TestCase):
-    def make_selector(self, *, mode="auto", online=True, groq=None, gemini=None, ollama=None):
+    def make_selector(self, *, mode="auto", online=True, groq=None, gemini=None, cerebras=None, ollama=None):
         return ProviderSelector(
-            {"groq": groq or _Provider("groq"), "gemini": gemini or _Provider("gemini"), "ollama": ollama or _Provider("ollama")},
+            {
+                "groq": groq or _Provider("groq"),
+                "gemini": gemini or _Provider("gemini"),
+                "cerebras": cerebras or _Provider("cerebras"),
+                "ollama": ollama or _Provider("ollama"),
+            },
             mode=mode, connectivity=_Connectivity(online),
         )
 
@@ -32,12 +37,13 @@ class ProviderSelectorTests(unittest.TestCase):
         self.assertEqual(self.generate(self.make_selector(online=False, groq=groq, ollama=local)), "groq")
         self.assertEqual(groq.calls, 1)
 
-    def test_auto_falls_back_groq_to_gemini_to_ollama(self):
+    def test_auto_falls_back_groq_to_gemini_to_cerebras_to_ollama(self):
         groq = _Provider("groq", error=ConnectionError("groq down"))
         gemini = _Provider("gemini", error=ConnectionError("gemini down"))
+        cerebras = _Provider("cerebras", error=ConnectionError("cerebras down"))
         local = _Provider("ollama")
-        self.assertEqual(self.generate(self.make_selector(groq=groq, gemini=gemini, ollama=local)), "ollama")
-        self.assertEqual((groq.calls, gemini.calls, local.calls), (1, 1, 1))
+        self.assertEqual(self.generate(self.make_selector(groq=groq, gemini=gemini, cerebras=cerebras, ollama=local)), "ollama")
+        self.assertEqual((groq.calls, gemini.calls, cerebras.calls, local.calls), (1, 1, 1, 1))
 
     def test_auto_prioritizes_groq_before_other_providers(self):
         groq, gemini, local = _Provider("groq"), _Provider("gemini"), _Provider("ollama")
@@ -50,5 +56,5 @@ class ProviderSelectorTests(unittest.TestCase):
         self.assertEqual(self.generate(self.make_selector(mode="cloud", groq=groq, ollama=local)), "groq")
 
     def test_no_available_provider_returns_controlled_error(self):
-        selector = self.make_selector(groq=_Provider("groq", available=False), gemini=_Provider("gemini", available=False), ollama=_Provider("ollama", available=False))
+        selector = self.make_selector(groq=_Provider("groq", available=False), gemini=_Provider("gemini", available=False), cerebras=_Provider("cerebras", available=False), ollama=_Provider("ollama", available=False))
         with self.assertRaises(AIUnavailableError): self.generate(selector)

@@ -6,6 +6,8 @@ class Planner:
     def plan(self, message: str):
 
         text = message.lower()
+        if "youtube" in text or "you tube" in text:
+            return [text.strip()]
 
         separators = [
             " y luego ",

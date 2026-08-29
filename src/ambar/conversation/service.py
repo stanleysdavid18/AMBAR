@@ -1,4 +1,5 @@
 import threading
+from queue import SimpleQueue
 import time
 import unicodedata
 import re
@@ -16,6 +17,7 @@ class ConversationService:
         self._states, self._events = states, events
         self._running, self._sleeping = False, True
         self._test_requested = False
+        self._teach_responses = SimpleQueue()
         self._test_stop_event = threading.Event()
         # El contador inicia al finalizar la respuesta, no antes de que el
         # modelo y Piper terminen su trabajo.
@@ -25,6 +27,7 @@ class ConversationService:
         self._casual = casual or CasualController(config.get("casual"))
         events.subscribe("gui.test.start", self._request_test)
         events.subscribe("gui.test.stop", self._stop_test)
+        events.subscribe("teach_app.response", self._queue_teach_response)
 
     def start(self):
         self._running, self._sleeping = True, True
@@ -69,6 +72,18 @@ class ConversationService:
         self._test_stop_event.set()
         self._casual.shutdown()
 
+    def _queue_teach_response(self, text):
+        if text:
+            self._teach_responses.put(text)
+
+    def _deliver_teach_response(self):
+        try:
+            text = self._teach_responses.get_nowait()
+        except Exception:
+            return
+        self._respond(text)
+        if self._running and not self._sleeping:
+            self._states.set(SystemState.LISTENING)
     def _request_test(self, _data=None):
         if not self._test_requested:
             self._test_stop_event.clear()
@@ -79,6 +94,7 @@ class ConversationService:
 
     def _run_test(self):
         self._test_requested = False
+        self._teach_responses = SimpleQueue()
         if self._voice.pause_listening() is False:
             self._report_error("No se pudo pausar el micrófono.")
             return

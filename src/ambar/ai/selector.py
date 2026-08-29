@@ -8,15 +8,17 @@ class AIUnavailableError(RuntimeError):
 
 
 class ProviderSelector:
-    """Prioriza proveedores cloud rápidos y deja Ollama como fallback local."""
+    """Prioriza proveedores cloud y deja Ollama como fallback local."""
 
     VALID_MODES = {"auto", "local", "cloud"}
-    CLOUD_PRIORITY = ("groq", "gemini")
+    DEFAULT_PRIORITY = ("groq", "gemini", "cerebras", "ollama")
 
-    def __init__(self, providers, mode="auto", connectivity=None, probe_ttl=60, clock=monotonic):
+    def __init__(self, providers, mode="auto", priority=None, connectivity=None, probe_ttl=60, clock=monotonic):
         if mode not in self.VALID_MODES:
             raise ValueError(f"Modo de IA desconocido: {mode}")
         self._providers, self._mode, self._connectivity = providers, mode, connectivity
+        requested = priority or self.DEFAULT_PRIORITY
+        self._priority = tuple(name for name in requested if name in providers)
         self._probe_ttl, self._clock, self._health, self._latency = float(probe_ttl), clock, {}, {}
 
     @property
@@ -32,22 +34,16 @@ class ProviderSelector:
                 response = self._providers[name].generate(history, facts, system_prompt)
                 self._latency[name] = self._clock() - started
                 return response
-            except Exception as error:
-                print(f"[AI] {name} falló ({error}); probando fallback.")
+            except Exception:
+                print(f"[AI] {name} falló; probando fallback.")
                 self._health.pop(name, None)
-                errors.append(f"{name}: {error}")
-        raise AIUnavailableError("Ningún proveedor de IA respondió: " + "; ".join(errors))
+                errors.append(name)
+        raise AIUnavailableError("Ningún proveedor de IA respondió: " + ", ".join(errors))
 
     def _candidates(self):
         if self._mode == "local":
             return ["ollama"] if self._available("ollama") else []
-        # No depende de api.openai.com: prueba los proveedores configurados directamente.
-        cloud = []
-        for name in self.CLOUD_PRIORITY:
-            if self._available(name):
-                cloud.append(name)
-            else:
-                print(f"[AI] {name} no está configurado o no está disponible; omitiendo.")
+        cloud = [name for name in self._priority if name != "ollama" and self._available(name)]
         if self._mode == "cloud":
             return cloud
         return [*cloud, *(["ollama"] if self._available("ollama") else [])]

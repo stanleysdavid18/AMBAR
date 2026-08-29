@@ -1,0 +1,15 @@
+{
+  "el juego delta": {
+    "command": "C:\\Users\\Dell\\Downloads\\Deltarune2\\Deltarune\\DELTARUNE.exe",
+    "aliases": [
+      "el juego delta",
+      "delta run"
+    ]
+  },
+  "el emulador": {
+    "command": "C:\\Users\\Dell\\Desktop\\JUEGOS DE PC\\.2+\\pcsx2-qt.exe",
+    "aliases": [
+      "el emulador"
+    ]
+  }
+}

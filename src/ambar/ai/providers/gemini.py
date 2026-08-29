@@ -1,23 +1,34 @@
 """Proveedor Gemini para la abstracción de IA existente de Ámbar."""
 
-import os
+from ambar.config.secrets import ApiKeyStore
 
 
 class GeminiProvider:
-    def __init__(self, model):
-        self.model, self._client, self._error = model, None, None
+    def __init__(self, model, key_store=None):
+        self.model = model
+        self._keys = key_store or ApiKeyStore()
+        self._client = None
+        self._key_in_use = None
+        self._error = None
 
     def is_available(self):
-        if not os.environ.get("GEMINI_API_KEY"):
+        key = self._keys.get("GEMINI_API_KEY")
+        if not key:
             return False
-        if self._client is None and self._error is None:
+        if self._error is not None and key == self._key_in_use:
+            return False
+        if self._client is not None and self._key_in_use is None:
+            self._key_in_use = key
+            return True
+        if self._client is None or key != self._key_in_use:
             try:
                 from google import genai
-                self._client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], vertexai=False)
+                self._client = genai.Client(api_key=key, vertexai=False)
+                self._key_in_use, self._error = key, None
             except Exception as error:
                 self._error = error
                 return False
-        return self._client is not None
+        return True
 
     def generate(self, history, facts, system_prompt=""):
         if not self.is_available():
@@ -26,11 +37,15 @@ class GeminiProvider:
         if facts:
             facts_text = "\n".join(f"{key}: {value}" for key, value in facts.items())
             instructions = f"{instructions}\n\nInformación conocida del usuario:\n{facts_text}".strip()
-        response = self._client.models.generate_content(
-            model=self.model,
-            contents=self._contents_from_history(history),
-            config={"system_instruction": instructions} if instructions else None,
-        )
+        try:
+            response = self._client.models.generate_content(
+                model=self.model,
+                contents=self._contents_from_history(history),
+                config={"system_instruction": instructions} if instructions else None,
+            )
+        except Exception as error:
+            self._error = error
+            raise
         text = getattr(response, "text", "")
         if not text:
             raise RuntimeError("Gemini no devolvió texto")
@@ -49,3 +64,4 @@ class GeminiProvider:
         if not contents:
             raise RuntimeError("Gemini necesita al menos un mensaje de usuario")
         return contents
+
