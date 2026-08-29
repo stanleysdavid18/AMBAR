@@ -1,0 +1,31 @@
+{
+    "assistant": {
+        "name": "Ámbar",
+        "version": "0.2"
+    },
+
+    "ai": {
+        "mode": "auto",
+        "provider_priority": ["groq", "gemini", "ollama"],
+        "ollama_model": "llama3.2:3b",
+        "openai_model": "gpt-5.6-sol",
+        "gemini_model": "gemini-2.5-flash",
+        "groq_model": "llama-3.3-70b-versatile",
+        "probe_cache_seconds": 60
+    },
+
+    "voice": {
+        "model": "es_MX-claude-high.onnx"
+    },
+
+    "casual": {
+        "sleep_seconds": 30,
+        "cooldown_seconds": 300,
+        "jitter_seconds": 0
+    },
+
+    "conversation": {
+        "sleep_idle_seconds": 60
+    }
+
+}

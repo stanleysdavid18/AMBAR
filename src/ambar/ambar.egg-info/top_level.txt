@@ -1,0 +1,9 @@
+ai
+automation
+config
+core
+memory
+personality
+ui
+utils
+voice

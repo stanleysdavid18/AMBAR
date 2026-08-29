@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ambar"
+version = "0.1.0"
+description = "Asistente inteligente modular desarrollado en Python."
+readme = "README.md"
+requires-python = ">=3.12"
+
+authors = [
+    { name = "Stanleys-David" }
+]
+
+dependencies = [
+    "faster-whisper", "google-genai", "groq", "numpy", "ollama", "openai", "PySide6", "pyautogui", "scipy",
+    "silero-vad", "sounddevice", "torch",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ambar]
+codename = "Ámbar"
+stage = "Pre-Alpha"
