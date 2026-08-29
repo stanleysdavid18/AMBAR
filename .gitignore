@@ -73,3 +73,9 @@ models/voices/*.onnx
 work/
 build/
 dist/
+
+# ===============================
+# MODELOS LOCALES DE IA
+# ===============================
+models/whisper-small/model.bin
+models/voices/*.onnx
