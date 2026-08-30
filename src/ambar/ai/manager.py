@@ -6,6 +6,7 @@ from ambar.ai.providers.openai import OpenAIProvider
 from ambar.ai.selector import ProviderSelector
 from ambar.ai.connectivity import ConnectivityChecker
 from ambar.config.manager import ConfigManager
+from ambar.config.secrets import ApiKeyStore
 from ambar.memory.working_memory import WorkingMemory
 from ambar.memory.facts_memory import FactsMemory
 from ambar.memory.extractor import FactExtractor
@@ -36,7 +37,12 @@ class AIManager:
             probe_ttl=ai_config.get("probe_cache_seconds", 60),
         )
 
+    @staticmethod
+    def _log_developer_mode():
+        if ApiKeyStore().developer_mode:
+            print("[AI] modo=pruebas-dev")
     def generate(self, message: str, system_prompt: str = "") -> str:
+        self._log_developer_mode()
         self.memory.add("user", message)
         self.extractor.process(message)
         text = message.lower().strip()
@@ -51,6 +57,9 @@ class AIManager:
         return response
 
     def generate_initiative(self, instruction: str, system_prompt: str = "") -> str:
+        self._log_developer_mode()
         """Genera una iniciativa sin registrarla falsamente como mensaje del usuario."""
         history = self.memory.history() + [{"role": "user", "content": instruction}]
         return self.selector.generate(history=history, facts=self.facts.all(), system_prompt=system_prompt)
+
+

@@ -13,20 +13,22 @@ class CerebrasProvider:
         self._key_in_use = None
         self._error = None
 
-    def is_available(self):
+    def _key(self):
         key = self._keys.get("CEREBRAS_API_KEY")
+        if key != self._key_in_use:
+            if self._client is not None and self._key_in_use is None:
+                self._key_in_use = key
+            else:
+                self._client, self._error, self._key_in_use = None, None, key
+        return key
+
+    def is_available(self):
+        key = self._key()
         if not key:
             return False
-        if self._error is not None and key == self._key_in_use:
-            return False
-        if self._client is None or key != self._key_in_use:
+        if self._client is None:
             try:
-                self._client = OpenAI(
-                    api_key=key,
-                    base_url="https://api.cerebras.ai/v1",
-                    timeout=15.0,
-                )
-                self._key_in_use, self._error = key, None
+                self._client = OpenAI(api_key=key, base_url="https://api.cerebras.ai/v1", timeout=15.0)
             except Exception as error:
                 self._error = error
                 return False
@@ -39,19 +41,13 @@ class CerebrasProvider:
         if facts:
             facts_text = "\n".join(f"{key}: {value}" for key, value in facts.items())
             instructions = f"{instructions}\n\nInformación conocida del usuario:\n{facts_text}".strip()
-        messages = []
-        if instructions:
-            messages.append({"role": "system", "content": instructions})
-        messages.extend(history)
+        messages = ([{"role": "system", "content": instructions}] if instructions else []) + list(history)
         try:
             response = self._client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=0.7,
-                max_completion_tokens=700,
+                model=self.model, messages=messages, temperature=0.7, max_completion_tokens=700,
             )
         except Exception as error:
-            self._error = error
+            self._client, self._error = None, error
             raise
         text = response.choices[0].message.content
         if not text:

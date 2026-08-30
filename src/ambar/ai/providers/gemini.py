@@ -11,20 +11,23 @@ class GeminiProvider:
         self._key_in_use = None
         self._error = None
 
-    def is_available(self):
+    def _key(self):
         key = self._keys.get("GEMINI_API_KEY")
+        if key != self._key_in_use:
+            if self._client is not None and self._key_in_use is None:
+                self._key_in_use = key  # permite clientes inyectados en pruebas
+            else:
+                self._client, self._error, self._key_in_use = None, None, key
+        return key
+
+    def is_available(self):
+        key = self._key()
         if not key:
             return False
-        if self._error is not None and key == self._key_in_use:
-            return False
-        if self._client is not None and self._key_in_use is None:
-            self._key_in_use = key
-            return True
-        if self._client is None or key != self._key_in_use:
+        if self._client is None:
             try:
                 from google import genai
                 self._client = genai.Client(api_key=key, vertexai=False)
-                self._key_in_use, self._error = key, None
             except Exception as error:
                 self._error = error
                 return False
@@ -41,10 +44,13 @@ class GeminiProvider:
             response = self._client.models.generate_content(
                 model=self.model,
                 contents=self._contents_from_history(history),
-                config={"system_instruction": instructions} if instructions else None,
+                config={
+                    "system_instruction": instructions or None,
+                    "automatic_function_calling": {"disable": True},
+                },
             )
         except Exception as error:
-            self._error = error
+            self._client, self._error = None, error
             raise
         text = getattr(response, "text", "")
         if not text:
@@ -53,15 +59,15 @@ class GeminiProvider:
 
     @staticmethod
     def _contents_from_history(history):
-        """Convierte mensajes OpenAI (role/content) al formato google-genai."""
+        """Convierte historial OpenAI a Contents de google-genai."""
         contents = []
         for message in history:
             text = str(message.get("content", "")).strip()
-            if not text:
-                continue
-            role = "model" if message.get("role") == "assistant" else "user"
-            contents.append({"role": role, "parts": [{"text": text}]})
+            if text:
+                role = "model" if message.get("role") == "assistant" else "user"
+                contents.append({"role": role, "parts": [{"text": text}]})
         if not contents:
             raise RuntimeError("Gemini necesita al menos un mensaje de usuario")
         return contents
+
 

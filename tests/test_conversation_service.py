@@ -89,6 +89,10 @@ class ConversationServiceTests(unittest.TestCase):
         self.assertEqual(errors, ["No puedo conectarme con el motor de IA."])
         self.assertEqual(self.states.current, SystemState.ERROR)
 
+    def test_casual_response_wait_is_never_less_than_ten_seconds(self):
+        self.service._idle_timeout_seconds = 3
+        self.service._awaiting_casual_response = True
+        self.assertEqual(self.service._idle_timeout(), 10.0)
     def test_casual_commands_are_an_optional_normal_mode_feature(self):
         casual = CasualController({"sleep_seconds": 30, "cooldown_seconds": 300, "jitter_seconds": 0})
         self.service._casual = casual
@@ -97,3 +101,4 @@ class ConversationServiceTests(unittest.TestCase):
         self.assertTrue(casual.enabled)
         self.service.handle("Desactiva modo casual")
         self.assertFalse(casual.enabled)
+

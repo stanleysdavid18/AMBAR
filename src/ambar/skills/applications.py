@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 from ambar.actions.system_apps import SystemApplicationFinder
-from ambar.core.paths import application_root
+from ambar.core.paths import writable_config_root
 from ambar.skills.base import Skill
 
 
@@ -50,7 +50,7 @@ class ApplicationSkill(Skill):
             "google chrome": "chrome.exe",
             "spotify": "spotify.exe",
         }
-        self._file = application_root() / "config" / "learned_apps.json"
+        self._file = writable_config_root() / "learned_apps.json"
         self._learned = self._load()
         self._pending_app = None
         self._candidate = None
@@ -201,3 +201,4 @@ class ApplicationSkill(Skill):
             return True
         # nombre simple tipo discord.exe / code
         return re.fullmatch(r"[\w.-]+", command) is not None
+

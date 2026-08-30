@@ -1,41 +1,42 @@
 {
-  "assistant": {
-    "name": "Ámbar",
-    "version": "0.2"
-  },
-  "ai": {
-    "mode": "auto",
-    "provider_priority": [
-      "groq",
-      "gemini",
-      "cerebras",
-      "ollama"
-    ],
-    "ollama_model": "llama3.2:3b",
-    "openai_model": "gpt-5.6-sol",
-    "gemini_model": "gemini-2.5-flash",
-    "groq_model": "llama-3.1-8b-instant",
-    "probe_cache_seconds": 60,
-    "cerebras_model": "gpt-oss-120b"
-  },
-  "voice": {
-    "model": "es_MX-claude-high.onnx",
-    "input_device": null,
-    "record_max_seconds": 45.0,
-    "silence_seconds": 1.6,
-    "barge_in_enabled": true,
-    "barge_in_max_seconds": 6.0,
-    "barge_in_threshold": 0.003,
-    "min_threshold": 0.003,
-    "noise_multiplier": 1.25,
-    "max_threshold": 0.015
-  },
-  "casual": {
-    "sleep_seconds": 30,
-    "cooldown_seconds": 300,
-    "jitter_seconds": 0
-  },
-  "conversation": {
-    "sleep_idle_seconds": 60
-  }
+    "assistant": {
+        "name": "Ámbar",
+        "version": "betaV2"
+    },
+    "ai": {
+        "mode": "auto",
+        "provider_priority": [
+            "groq",
+            "gemini",
+            "cerebras",
+            "ollama"
+        ],
+        "ollama_model": "llama3.2:3b",
+        "openai_model": "gpt-5.6-sol",
+        "gemini_model": "gemini-3.6-flash",
+        "groq_model": "openai/gpt-oss-20b",
+        "probe_cache_seconds": 60,
+        "cerebras_model": "gpt-oss-120b"
+    },
+    "voice": {
+        "model": "es_MX-claude-high.onnx",
+        "input_device": null,
+        "record_max_seconds": 45.0,
+        "silence_seconds": 1.6,
+        "barge_in_enabled": true,
+        "barge_in_max_seconds": 6.0,
+        "barge_in_threshold": 0.003,
+        "min_threshold": 0.003,
+        "noise_multiplier": 1.25,
+        "max_threshold": 0.015
+    },
+    "casual": {
+        "sleep_seconds": 30,
+        "cooldown_seconds": 300,
+        "jitter_seconds": 0,
+        "response_wait_seconds": 10
+    },
+    "conversation": {
+        "sleep_idle_seconds": 60
+    }
 }

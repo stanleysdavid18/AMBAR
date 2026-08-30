@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLineEdit,
+    QMessageBox,
     QLabel,
     QPushButton,
     QSizeGrip,
@@ -26,6 +27,7 @@ from ambar.gui.avatar import AvatarWidget
 
 class AmberWindow(QWidget):
     minimized_to_tray = Signal()
+    exit_requested = Signal()
     _DISPLAY = {
         SystemState.OFFLINE: "Desconectada", SystemState.STARTING: "Iniciando...",
         SystemState.READY: "Lista", SystemState.SLEEPING: "Dormida",
@@ -43,7 +45,7 @@ class AmberWindow(QWidget):
         self._show_microphone_button = self._settings.value("ui/show_microphone_button", True, type=bool)
         self._microphone_enabled = self._transcription_active = self._developer_mode = False
 
-        self.setWindowTitle("Ámbar")
+        self.setWindowTitle("Ámbar betaV2")
         self.setMinimumSize(280, 320)
         self.resize(340, 390)
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint)
@@ -51,7 +53,7 @@ class AmberWindow(QWidget):
         self.restoreGeometry(self._settings.value("window/geometry", b""))
 
         self.avatar = AvatarWidget()
-        self.name = QLabel("ÁMBAR")
+        self.name = QLabel("ÁMBAR • betaV2")
         self.status = QLabel("Dormida")
         self.mode_status = QLabel("MODO: NORMAL • CASUAL: DESACTIVADO")
         self.transcript = QLabel("")
@@ -74,7 +76,7 @@ class AmberWindow(QWidget):
         self.settings_button.clicked.connect(self.show_settings)
         self.quick_microphone_button.clicked.connect(self.toggle_microphone)
         self.minimize_button.clicked.connect(self.minimize_to_tray)
-        self.close_button.clicked.connect(self.close)
+        self.close_button.clicked.connect(self.exit_requested.emit)
 
         self.resize_grip = QSizeGrip(self)
         self._build_settings_panel()
@@ -212,6 +214,25 @@ class AmberWindow(QWidget):
             self.api_keys_form.addRow(key_name, field)
         self.save_api_keys_button = QPushButton("Guardar API Keys")
         self.api_keys_status = QLabel("")
+        self.dev_testing_checkbox = QCheckBox("Activar modo pruebas del desarrollador")
+        self.dev_risks_checkbox = QCheckBox("Entiendo los riesgos")
+        self.dev_risks_checkbox.setEnabled(False)
+        self.dev_warning = QLabel(
+            "Opción experimental solo para pruebas. Puede no funcionar, tiene límites, no es el modo recomendado para usuarios finales y puede dejar de estar disponible."
+        )
+        self.dev_warning.setWordWrap(True)
+        self.dev_warning.setStyleSheet("color: #ffcf7a;")
+        self.google_dev_button = QPushButton("Continuar con Google (pruebas)")
+        self.dev_testing_status = QLabel("")
+        self.dev_testing_checkbox.toggled.connect(self._prepare_dev_testing)
+        self.dev_risks_checkbox.toggled.connect(self._set_dev_testing)
+        self.google_dev_button.clicked.connect(self.show_google_dev_notice)
+        saved_dev_mode = self._settings.value("developer/testing_mode", False, type=bool)
+        self.dev_testing_checkbox.setChecked(saved_dev_mode)
+        self.dev_risks_checkbox.setEnabled(saved_dev_mode)
+        self.dev_risks_checkbox.setChecked(saved_dev_mode)
+        if saved_dev_mode:
+            self._set_dev_testing(True)
         self.save_api_keys_button.clicked.connect(self.save_api_keys)
 
         self._input_devices = [
@@ -253,6 +274,12 @@ class AmberWindow(QWidget):
         layout.addLayout(self.api_keys_form)
         layout.addWidget(self.save_api_keys_button)
         layout.addWidget(self.api_keys_status)
+        layout.addWidget(QLabel("Desarrollador / Pruebas (experimental)"))
+        layout.addWidget(self.dev_warning)
+        layout.addWidget(self.dev_testing_checkbox)
+        layout.addWidget(self.dev_risks_checkbox)
+        layout.addWidget(self.google_dev_button)
+        layout.addWidget(self.dev_testing_status)
         self.settings_panel.setLayout(layout)
 
     def show_teach_app_dialog(self, data):
@@ -271,12 +298,38 @@ class AmberWindow(QWidget):
         self.settings_panel.raise_()
         self.settings_panel.activateWindow()
 
+    def _prepare_dev_testing(self, enabled):
+        self.dev_risks_checkbox.setEnabled(enabled)
+        if not enabled:
+            self.dev_risks_checkbox.setChecked(False)
+            self._settings.setValue("developer/testing_mode", False)
+            self.dev_testing_status.setText("Modo pruebas desactivado.")
+        elif not self.dev_risks_checkbox.isChecked():
+            self.dev_testing_status.setText("Confirma que entiendes los riesgos para activar este modo.")
+
+    def _set_dev_testing(self, understood):
+        enabled = self.dev_testing_checkbox.isChecked() and understood
+        self._settings.setValue("developer/testing_mode", enabled)
+        if enabled:
+            if ApiKeyStore().dev_secrets_available():
+                self.dev_testing_status.setText("Modo pruebas activo.")
+            else:
+                self.dev_testing_status.setText("Modo pruebas no configurado en este build.")
+
+    def show_google_dev_notice(self):
+        # OAuth real requiere client ID, redirect URI y backend para custodiar tokens.
+        QMessageBox.information(
+            self,
+            "Google para pruebas",
+            "OAuth de producción no está incluido en este build. Para pruebas, configura config/dev_secrets.json local; no pegues tokens de producción aquí.",
+        )
     def save_api_keys(self):
         values = {name: field.text() for name, field in self.api_key_fields.items() if field.text().strip()}
         if not values:
             self.api_keys_status.setText("Escribe al menos una clave para guardar.")
             return
         self._key_store.save(values)
+        ConfigManager().update_section("ai", {"mode": "auto"})
         for name, field in self.api_key_fields.items():
             field.clear()
             field.setPlaceholderText(ApiKeyStore.mask(self._key_store.get(name)))
@@ -395,7 +448,6 @@ class AmberWindow(QWidget):
 
     def mouseReleaseEvent(self, event):
         self._drag_offset = None
-        self._allow_exit = False
         event.accept()
 
     def closeEvent(self, event):
@@ -408,3 +460,8 @@ class AmberWindow(QWidget):
             return
         event.ignore()
         self.minimize_to_tray()
+
+
+
+
+

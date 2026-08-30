@@ -19,3 +19,13 @@ def writable_runtime() -> Path:
     runtime = root / "runtime"
     runtime.mkdir(parents=True, exist_ok=True)
     return runtime
+
+
+def writable_config_root() -> Path:
+    """Configuración persistente fuera del bundle cuando la app está congelada."""
+    if getattr(sys, "frozen", False):
+        root = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "AMBAR" / "config"
+    else:
+        root = application_root() / "config"
+    root.mkdir(parents=True, exist_ok=True)
+    return root

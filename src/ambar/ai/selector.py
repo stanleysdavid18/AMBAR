@@ -34,11 +34,16 @@ class ProviderSelector:
                 response = self._providers[name].generate(history, facts, system_prompt)
                 self._latency[name] = self._clock() - started
                 return response
-            except Exception:
-                print(f"[AI] {name} falló; probando fallback.")
+            except Exception as error:
+                print(f"[AI] {name} falló ({self._error_summary(error)}); probando fallback.")
                 self._health.pop(name, None)
                 errors.append(name)
         raise AIUnavailableError("Ningún proveedor de IA respondió: " + ", ".join(errors))
+
+    @staticmethod
+    def _error_summary(error):
+        message = " ".join(str(error).split())
+        return f"{type(error).__name__}: {message[:180]}" if message else type(error).__name__
 
     def _candidates(self):
         if self._mode == "local":
@@ -50,7 +55,7 @@ class ProviderSelector:
 
     def _available(self, name):
         checked, now = self._health.get(name), self._clock()
-        if checked and now - checked[0] < self._probe_ttl:
+        if checked and checked[1] and now - checked[0] < self._probe_ttl:
             return checked[1]
         provider = self._providers.get(name)
         if provider is None:
@@ -61,3 +66,4 @@ class ProviderSelector:
             available = False
         self._health[name] = (now, available)
         return available
+

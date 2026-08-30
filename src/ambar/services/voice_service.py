@@ -111,6 +111,10 @@ class VoiceService:
             return None
         finally:
             self._speaking = False
+            # Nunca dejar la escucha normal detenida al finalizar TTS. Si el
+            # usuario apagó el micrófono explícitamente, no la reactivamos.
+            if self._microphone_enabled and not self._listening:
+                self.start()
 
     def _speak_with_wake_filter(self, text):
         audio = self._speaker.synthesize(text)
@@ -139,3 +143,4 @@ class VoiceService:
 
     def is_wake_word(self, text):
         return self._wakeword.detect(text)
+

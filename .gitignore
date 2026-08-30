@@ -1,83 +1,43 @@
-# ===============================
-# PYTHON
-# ===============================
+# Python and environments
 __pycache__/
+**/__pycache__/
 *.py[cod]
-*.pyo
-*.pyd
 *.egg-info/
-
-# ===============================
-# VENV
-# ===============================
 .venv/
 venv/
 
-# ===============================
-# IDE
-# ===============================
-.vscode/
-.idea/
+# Local configuration and secrets
+.env
+config/secrets.json
+config/dev_secrets.json
+config/learned_apps.json
+learned_apps.json
 
-# ===============================
-# TEST
-# ===============================
+# Runtime, logs and temporary files
+runtime/
+logs/
+*.log
+*.tmp
+*.cache
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-
-# ===============================
-# COVERAGE
-# ===============================
 .coverage
 htmlcov/
 
-# ===============================
-# ENV
-# ===============================
-.env
-
-# ===============================
-# WINDOWS
-# ===============================
+# IDE and OS
+.vscode/
+.idea/
 Thumbs.db
 Desktop.ini
 
-# ===============================
-# AUDIO TEMPORAL
-# ===============================
-runtime/audio/
-runtime/**/*.wav
-
-# ===============================
-# CACHE
-# ===============================
-*.tmp
-*.cache
-
-# ===============================
-# BUILD / PYINSTALLER
-# ===============================
-work/
+# Packaging and audits
 build/
 dist/
-# ===============================
-# MODELOS PESADOS
-# ===============================
-models/whisper-small/model.bin
-models/voices/*.onnx
-
-# ===============================
-# BUILD / PYINSTALLER
-# ===============================
 work/
-build/
-dist/
+*.spec.bak
+AMBAR_AUDITORIA.zip
+*.zip
 
-# ===============================
-# MODELOS LOCALES DE IA
-# ===============================
-models/whisper-small/model.bin
-models/voices/*.onnx
-
-
+# Generated developer material
+installer/output/

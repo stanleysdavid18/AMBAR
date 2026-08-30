@@ -1,9 +1,10 @@
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QSettings, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication, QMenu, QStyle, QSystemTrayIcon
 
 from ambar.core.state import SystemState
 from ambar.core.state_manager import StateManager
+from ambar.gui.first_run import FirstRunWizard
 from ambar.gui.window import AmberWindow
 
 
@@ -24,6 +25,7 @@ class AmberGUI:
         self._exiting = False
         self.app = QApplication.instance() or QApplication([])
         self.app.setQuitOnLastWindowClosed(False)
+        self._show_first_run_wizard()
         self.window = AmberWindow(events)
         self._bridge = _StateBridge()
         self._bridge.changed.connect(self.window.set_system_state)
@@ -34,6 +36,7 @@ class AmberGUI:
         self._bridge.teach_app_requested.connect(self.window.show_teach_app_dialog)
         self._bridge.wake_detected.connect(self.restore_window)
         self.window.minimized_to_tray.connect(self._show_tray_hint)
+        self.window.exit_requested.connect(self.exit_application)
         self._create_tray()
 
         events.subscribe(StateManager.EVENT_NAME, self._on_state_changed)
@@ -43,6 +46,11 @@ class AmberGUI:
         events.subscribe("mode.changed", self._on_mode_changed)
         events.subscribe("casual.changed", self._on_casual_changed)
         events.subscribe("gui.teach_app.request", self._on_teach_app_request)
+
+    def _show_first_run_wizard(self):
+        settings = QSettings("AMBAR", "AMBAR")
+        if not settings.value("onboarding/completed", False, type=bool):
+            FirstRunWizard().exec()
 
     def _create_tray(self):
         icon = self.app.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
@@ -128,7 +136,6 @@ class AmberGUI:
         self.tray.hide()
         self._events.unsubscribe(StateManager.EVENT_NAME, self._on_state_changed)
         self._events.unsubscribe("gui.test.state", self._on_test_state)
-        self._events.unsubscribe("gui.test.stop", self._on_test_state)
         self._events.unsubscribe("gui.test.transcript", self._on_transcript)
         self._events.unsubscribe("gui.microphone.changed", self._on_microphone_changed)
         self._events.unsubscribe("mode.changed", self._on_mode_changed)
@@ -147,4 +154,9 @@ class AmberGUI:
                 signal.disconnect()
             except RuntimeError:
                 pass
+
+
+
+
+
 

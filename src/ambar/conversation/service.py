@@ -7,6 +7,7 @@ import re
 from ambar.core.state import SystemState
 from ambar.config.manager import ConfigManager
 from ambar.conversation.casual import CasualController
+from ambar.ai.selector import AIUnavailableError
 
 
 class ConversationService:
@@ -24,7 +25,10 @@ class ConversationService:
         config = ConfigManager()
         self._idle_timeout_seconds = config.get("conversation", "sleep_idle_seconds")
         self._last_activity = time.monotonic()
-        self._casual = casual or CasualController(config.get("casual"))
+        casual_settings = config.get("casual")
+        self._casual = casual or CasualController(casual_settings)
+        self._casual_response_wait_seconds = max(10.0, float(casual_settings.get("response_wait_seconds", 10)))
+        self._awaiting_casual_response = False
         events.subscribe("gui.test.start", self._request_test)
         events.subscribe("gui.test.stop", self._stop_test)
         events.subscribe("teach_app.response", self._queue_teach_response)
@@ -55,10 +59,11 @@ class ConversationService:
                         self._states.set(SystemState.LISTENING)
             elif (
                 not self._sleeping
-                and time.monotonic() - self._last_activity >= self._idle_timeout_seconds
+                and time.monotonic() - self._last_activity >= self._idle_timeout()
             ):
                 print("[Conversacion] Sin actividad. Ambar se duerme.")
                 self._sleeping = True
+                self._awaiting_casual_response = False
                 self._states.set(SystemState.SLEEPING)
                 self._casual.on_sleep()
             else:
@@ -120,6 +125,7 @@ class ConversationService:
         if not message:
             return
         self._casual.record_activity()
+        self._awaiting_casual_response = False
         self._events.emit("conversation.user_message", message)
         self._last_activity = time.monotonic()
         if self._sleeping:
@@ -230,6 +236,7 @@ class ConversationService:
                 # Una respuesta del usuario a esta iniciativa continúa la
                 # conversación normal sin exigir otra palabra de activación.
                 self._sleeping = False
+                self._awaiting_casual_response = True
         except Exception as error:
             self._report_error("No pude iniciar una interacción casual.", error)
         finally:
@@ -237,6 +244,11 @@ class ConversationService:
             if self._running:
                 self._states.set(SystemState.LISTENING if not self._sleeping else SystemState.SLEEPING)
 
+    def _idle_timeout(self):
+        """Tras una iniciativa casual deja siempre al menos 10 s para responder."""
+        if self._awaiting_casual_response:
+            return max(self._idle_timeout_seconds, self._casual_response_wait_seconds)
+        return self._idle_timeout_seconds
     def _mode_name(self):
         manager = getattr(self._brain, "mode_manager", None)
         return manager.current_name() if manager else "normal"
@@ -249,3 +261,5 @@ class ConversationService:
     def _normalize(text):
         normalized = unicodedata.normalize("NFD", text.casefold())
         return "".join(char for char in normalized if not unicodedata.combining(char))
+
+

@@ -40,3 +40,5 @@ class GeminiProviderTests(unittest.TestCase):
         ])
         self.assertIn("Responde en español.", provider._client.models.call["config"]["system_instruction"])
         self.assertIn("Stanleys", provider._client.models.call["config"]["system_instruction"])
+        self.assertTrue(provider._client.models.call["config"]["automatic_function_calling"]["disable"])
+

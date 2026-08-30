@@ -33,6 +33,14 @@ class VoiceServiceTests(unittest.TestCase):
         self.assertTrue(_Background.instances[0].running)
 
     @patch("ambar.services.voice_service.BackgroundListener", _Background)
+    def test_tts_reactivates_listener_if_a_previous_flow_paused_it(self):
+        speaker = _Speaker(); service = VoiceService(listener=_Listener(), speaker=speaker)
+        service.start()
+        service.pause_listening()
+        service.speak("respuesta")
+        self.assertTrue(service.listening)
+        self.assertTrue(_Background.instances[0].running)
+    @patch("ambar.services.voice_service.BackgroundListener", _Background)
     def test_wake_word_interrupts_but_other_transcripts_do_not(self):
         service = VoiceService(listener=_Listener(), speaker=_InterruptibleSpeaker()); service.start()
         _Background.instances[0].message = "ruido de fondo"

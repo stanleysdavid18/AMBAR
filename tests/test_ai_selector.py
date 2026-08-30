@@ -1,4 +1,6 @@
+import io
 import unittest
+from contextlib import redirect_stdout
 
 from ambar.ai.selector import AIUnavailableError, ProviderSelector
 
@@ -45,6 +47,13 @@ class ProviderSelectorTests(unittest.TestCase):
         self.assertEqual(self.generate(self.make_selector(groq=groq, gemini=gemini, cerebras=cerebras, ollama=local)), "ollama")
         self.assertEqual((groq.calls, gemini.calls, cerebras.calls, local.calls), (1, 1, 1, 1))
 
+    def test_logs_provider_error_type_and_message_before_fallback(self):
+        groq = _Provider("groq", error=RuntimeError("modelo no encontrado"))
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(self.generate(self.make_selector(groq=groq)), "gemini")
+        self.assertIn("[AI] groq falló (RuntimeError: modelo no encontrado)", output.getvalue())
+
     def test_auto_prioritizes_groq_before_other_providers(self):
         groq, gemini, local = _Provider("groq"), _Provider("gemini"), _Provider("ollama")
         self.assertEqual(self.generate(self.make_selector(groq=groq, gemini=gemini, ollama=local)), "groq")
@@ -55,6 +64,13 @@ class ProviderSelectorTests(unittest.TestCase):
         self.assertEqual(self.generate(self.make_selector(mode="local", groq=groq, ollama=local)), "ollama")
         self.assertEqual(self.generate(self.make_selector(mode="cloud", groq=groq, ollama=local)), "groq")
 
+    def test_unavailable_provider_is_checked_again_for_newly_saved_key(self):
+        groq = _Provider("groq", available=False)
+        selector = self.make_selector(groq=groq, gemini=_Provider("gemini", available=False), cerebras=_Provider("cerebras", available=False), ollama=_Provider("ollama", available=False))
+        self.assertFalse(selector._available("groq"))
+        groq.available = True
+        self.assertTrue(selector._available("groq"))
     def test_no_available_provider_returns_controlled_error(self):
         selector = self.make_selector(groq=_Provider("groq", available=False), gemini=_Provider("gemini", available=False), cerebras=_Provider("cerebras", available=False), ollama=_Provider("ollama", available=False))
         with self.assertRaises(AIUnavailableError): self.generate(selector)
+
